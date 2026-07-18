@@ -2,9 +2,39 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const qrcode = require('qrcode-terminal');
+const readline = require('readline');
 const pino = require('pino');
 const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('@whiskeysockets/baileys');
+
+// Helper to get phone number input from terminal
+function promptPhoneNumber() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question('📱 Enter your WhatsApp phone number (with country code, e.g., +1234567890): ', (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+// Helper to get pairing code from terminal
+function promptPairingCode() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question('🔐 Enter the 6-digit pairing code sent to your phone: ', (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
 
 async function startBot() {
   const authDir = process.env.AUTH_DIR || './auth_info';
@@ -21,15 +51,52 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) qrcode.generate(qr, { small: true });
-    if (connection === 'open') console.log('WhatsApp connection open');
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect } = update;
+    
+    // Check if we need to pair with a phone number
+    if (update.qr) {
+      console.log('\n⚠️  QR code detected, but we\'re using phone number pairing instead.');
+      console.log('Please use the phone number pairing method.\n');
+    }
+
+    if (connection === 'open') {
+      console.log('✅ WhatsApp connection open');
+    }
+    
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('connection closed, reconnect?', shouldReconnect);
+      console.log('❌ Connection closed, reconnect?', shouldReconnect);
+      
+      if (shouldReconnect) {
+        startBot();
+      }
     }
   });
+
+  // Check if already authenticated
+  const isAuthenticated = state.keys && Object.keys(state.keys).length > 0;
+
+  if (!isAuthenticated) {
+    console.log('\n🔄 First run detected — phone number pairing required.\n');
+    
+    try {
+      const phoneNumber = await promptPhoneNumber();
+      
+      // Request pairing code
+      const code = await sock.requestPairingCode(phoneNumber);
+      console.log(`\n✉️  Pairing code: ${code}\n`);
+      
+      const pairingCode = await promptPairingCode();
+      
+      // Complete pairing
+      const result = await sock.completePairingCode(pairingCode);
+      console.log('✅ Pairing successful!\n');
+    } catch (err) {
+      console.error('❌ Pairing failed:', err.message);
+      process.exit(1);
+    }
+  }
 
   // Load Commands into a Map
   const commands = new Map();
@@ -108,7 +175,7 @@ async function startBot() {
     }
   });
 
-  console.log('Bot started — scanning/ready to accept commands.');
+  console.log('🤖 Bot started — ready to accept commands.');
 }
 
 startBot().catch(err => {
