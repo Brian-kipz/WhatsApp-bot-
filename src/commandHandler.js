@@ -4,22 +4,35 @@ const path = require('path');
 function loadCommands(commandsPath) {
   const commands = new Map();
   if (!fs.existsSync(commandsPath)) return commands;
-  const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js') && !f.startsWith('_'));
-  for (const file of files) {
-    try {
-      const fullPath = path.join(commandsPath, file);
-      // delete from require cache to allow runtime reloads if needed
-      delete require.cache[require.resolve(fullPath)];
-      const cmd = require(fullPath);
-      if (!cmd || !cmd.name || typeof cmd.execute !== 'function') {
-        console.warn(`Skipping invalid command file: ${file}`);
+
+  function walk(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
         continue;
       }
-      commands.set(cmd.name, cmd);
-    } catch (err) {
-      console.warn(`Failed to load command ${file}:`, err.message);
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith('.js')) continue;
+      if (entry.name.startsWith('_')) continue; // skip templates/private files
+
+      try {
+        // clear from cache to allow reloads during runtime
+        delete require.cache[require.resolve(fullPath)];
+        const cmd = require(fullPath);
+        if (!cmd || !cmd.name || typeof cmd.execute !== 'function') {
+          console.warn(`Skipping invalid command file: ${fullPath}`);
+          continue;
+        }
+        commands.set(cmd.name, cmd);
+      } catch (err) {
+        console.warn(`Failed to load command ${fullPath}:`, err.message);
+      }
     }
   }
+
+  walk(commandsPath);
   return commands;
 }
 
