@@ -1,7 +1,8 @@
 module.exports = {
   name: 'alive',
-  description: 'Check whether the bot is alive',
-  async execute(client, message, args) {
-    await client.sendMessage(message.from, 'I am alive and ready!');
-  },
+  description: 'Check if the bot is operational',
+  async execute(sock, msg, args) {
+    const remoteJid = msg.key.remoteJid;
+    await sock.sendMessage(remoteJid, { text: "🤖 *BRIAN-TECH is active and online!*" });
+  }
 };
