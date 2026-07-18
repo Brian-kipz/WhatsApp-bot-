@@ -82,13 +82,18 @@ async function startBot() {
             // If content is an object (baileys message payload), forward directly
             if (typeof content === 'object') return sock.sendMessage(to, content);
             return sock.sendMessage(to, { text: String(content) });
+          },
+          reply: async (messageObj, content) => {
+            const to = messageObj.key?.remoteJid || messageObj.from;
+            return client.sendMessage(to, content);
           }
         };
 
         const message = {
           from: msg.key.remoteJid,
           id: msg.key.id,
-          body: text
+          body: text,
+          raw: msg
         };
 
         try {
